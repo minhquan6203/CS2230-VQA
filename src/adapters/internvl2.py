@@ -1,151 +1,132 @@
 """
-Adapter cho InternVL2 và InternVL2.5.
+Adapter cho InternVL2 (1B, 2B, 4B, 8B).
 Supported models:
+  - OpenGVLab/InternVL2-1B
   - OpenGVLab/InternVL2-2B
   - OpenGVLab/InternVL2-4B
   - OpenGVLab/InternVL2-8B
-  - OpenGVLab/InternVL2_5-4B
-  - OpenGVLab/InternVL2_5-8B
 
 Đặc điểm:
-  - Dùng trust_remote_code=True (model có custom code riêng)
-  - Tokenizer thuần (không có AutoProcessor)
-  - Dynamic resolution: ảnh chia tiles, mỗi tile = num_image_token IMG_CONTEXT tokens
-  - pixel_values shape: [total_tiles, 3, image_size, image_size]
-  - image_flags: [total_tiles] — đánh dấu tile nào là ảnh thật
+  - Dynamic resolution: ảnh được chia tiles 448×448 linh hoạt
+  - Dùng trust_remote_code=True để load model class từ HuggingFace
+  - Mỗi tile → 256 image tokens (pixel shuffle downsample 2×)
+  - Cần tự expand <image> → <img><IMG_CONTEXT>*N</img> trước khi tokenize
+  - Model tự handle image embedding injection trong forward()
 """
 
 import torch
 import torchvision.transforms as T
-from PIL import Image
+from torchvision.transforms.functional import InterpolationMode
 from transformers import AutoModel, AutoTokenizer
 
 from .base import BaseAdapter
 
-
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
+
 IMG_START_TOKEN = "<img>"
 IMG_END_TOKEN = "</img>"
 IMG_CONTEXT_TOKEN = "<IMG_CONTEXT>"
 
-INTERNVL_SYSTEM = (
-    "Bạn là trợ lý AI hữu ích, chuyên trả lời các câu hỏi "
-    "về nội dung trong ảnh bằng tiếng Việt."
-)
 
-
-# ------------------------------------------------------------------ #
-#  Image preprocessing                                                #
-# ------------------------------------------------------------------ #
-
-def _build_transform(image_size: int) -> T.Compose:
+def _build_transform(input_size):
     return T.Compose([
         T.Lambda(lambda img: img.convert("RGB") if img.mode != "RGB" else img),
-        T.Resize((image_size, image_size), interpolation=T.InterpolationMode.BICUBIC),
+        T.Resize((input_size, input_size), interpolation=InterpolationMode.BICUBIC),
         T.ToTensor(),
         T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
     ])
 
 
-def _find_best_ratio(aspect_ratio, target_ratios, width, height, image_size):
-    best_diff = float("inf")
-    best = (1, 1)
+def _find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_size):
+    best_ratio_diff = float("inf")
+    best_ratio = (1, 1)
     area = width * height
-    for r in target_ratios:
-        diff = abs(aspect_ratio - r[0] / r[1])
-        if diff < best_diff:
-            best_diff, best = diff, r
-        elif diff == best_diff and area > 0.5 * image_size ** 2 * r[0] * r[1]:
-            best = r
-    return best
+    for ratio in target_ratios:
+        target_ar = ratio[0] / ratio[1]
+        ratio_diff = abs(aspect_ratio - target_ar)
+        if ratio_diff < best_ratio_diff:
+            best_ratio_diff = ratio_diff
+            best_ratio = ratio
+        elif ratio_diff == best_ratio_diff:
+            if area > 0.5 * image_size * image_size * ratio[0] * ratio[1]:
+                best_ratio = ratio
+    return best_ratio
 
 
-def _dynamic_preprocess(
-    image: Image.Image, min_num: int = 1, max_num: int = 6,
-    image_size: int = 448, use_thumbnail: bool = True
-) -> list[Image.Image]:
-    w, h = image.size
-    target_ratios = sorted(
-        {(i, j) for n in range(min_num, max_num + 1)
-         for i in range(1, n + 1) for j in range(1, n + 1)
-         if min_num <= i * j <= max_num},
-        key=lambda x: x[0] * x[1],
+def _dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbnail=False):
+    orig_width, orig_height = image.size
+    aspect_ratio = orig_width / orig_height
+
+    target_ratios = set(
+        (i, j)
+        for n in range(min_num, max_num + 1)
+        for i in range(1, n + 1)
+        for j in range(1, n + 1)
+        if min_num <= i * j <= max_num
     )
-    tr = _find_best_ratio(w / h, target_ratios, w, h, image_size)
-    tw, th = image_size * tr[0], image_size * tr[1]
-    resized = image.resize((tw, th))
-    cols = tw // image_size
-    tiles = [
-        resized.crop((
-            (i % cols) * image_size, (i // cols) * image_size,
-            (i % cols + 1) * image_size, (i // cols + 1) * image_size,
-        ))
-        for i in range(tr[0] * tr[1])
-    ]
-    if use_thumbnail and len(tiles) > 1:
-        tiles.append(image.resize((image_size, image_size)))
-    return tiles
+    target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
 
-
-def _load_pixel_values(
-    image: Image.Image, max_num_tiles: int, image_size: int
-) -> torch.Tensor:
-    tiles = _dynamic_preprocess(
-        image, max_num=max_num_tiles, image_size=image_size, use_thumbnail=True
+    target_ar = _find_closest_aspect_ratio(
+        aspect_ratio, target_ratios, orig_width, orig_height, image_size
     )
-    transform = _build_transform(image_size)
-    return torch.stack([transform(t) for t in tiles])  # [num_tiles, 3, H, W]
+    target_width = image_size * target_ar[0]
+    target_height = image_size * target_ar[1]
+    blocks = target_ar[0] * target_ar[1]
+
+    resized_img = image.resize((target_width, target_height))
+    processed = []
+    for i in range(blocks):
+        box = (
+            (i % (target_width // image_size)) * image_size,
+            (i // (target_width // image_size)) * image_size,
+            ((i % (target_width // image_size)) + 1) * image_size,
+            ((i // (target_width // image_size)) + 1) * image_size,
+        )
+        processed.append(resized_img.crop(box))
+
+    if use_thumbnail and len(processed) != 1:
+        processed.append(image.resize((image_size, image_size)))
+    return processed
 
 
-# ------------------------------------------------------------------ #
-#  Adapter                                                            #
-# ------------------------------------------------------------------ #
+def _preprocess_image(image, input_size=448, max_num=6):
+    transform = _build_transform(input_size)
+    images = _dynamic_preprocess(
+        image, image_size=input_size, use_thumbnail=True, max_num=max_num
+    )
+    return torch.stack([transform(img) for img in images])
+
 
 class InternVL2Adapter(BaseAdapter):
 
-    image_size: int = 448
-    max_num_tiles: int = 6
-    num_image_token: int = 256
+    _max_num_tiles: int = 6
+    _num_image_token: int = 256
+    _im_end_id: int = 0
 
     # ------------------------------------------------------------------ #
-    #  Helpers                                                            #
-    # ------------------------------------------------------------------ #
-
-    def _setup_tokenizer(self, source: str):
-        tok = AutoTokenizer.from_pretrained(source, trust_remote_code=True, use_fast=False)
-        self.pad_token_id = tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id
-        self.img_context_token_id = tok.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
-        return tok
-
-    def _read_model_cfg(self, cfg: dict):
-        mc = cfg["model"]
-        self.image_size = mc.get("image_size", 448)
-        self.max_num_tiles = mc.get("max_num_tiles", 6)
-
-    def _cache_num_image_token(self, model):
-        """Đọc num_image_token từ model config, lưu vào self."""
-        base = getattr(model, "base_model", model)
-        base = getattr(base, "model", base)
-        self.num_image_token = getattr(base.config, "num_image_token", 256)
-
-    # ------------------------------------------------------------------ #
-    #  Load                                                               #
+    #  Load                                                                #
     # ------------------------------------------------------------------ #
 
     def load(self, cfg: dict) -> None:
-        self._read_model_cfg(cfg)
+        """Training mode: full fine-tune hoặc QLoRA tuỳ config."""
         model_name = cfg["model"]["name"]
+        self._max_num_tiles = cfg["model"].get("max_num_tiles", 6)
         use_lora = "lora" in cfg
         use_quant = "quantization" in cfg
 
         print(f"[InternVL2] Loading tokenizer: {model_name}")
-        self.processor = self._setup_tokenizer(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True, use_fast=False
+        )
+        self.pad_token_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+        self._im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
         load_kwargs = dict(
-            device_map="auto",
             torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
             trust_remote_code=True,
+            device_map="auto",
         )
         if use_quant:
             print(f"[InternVL2] Loading model (4-bit): {model_name}")
@@ -154,7 +135,10 @@ class InternVL2Adapter(BaseAdapter):
             print(f"[InternVL2] Loading model (bf16): {model_name}")
 
         model = AutoModel.from_pretrained(model_name, **load_kwargs)
-        self._cache_num_image_token(model)
+
+        # forward() cần img_context_token_id để thay embedding
+        model.img_context_token_id = self.tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
+        self._num_image_token = model.num_image_token  # 256
 
         if use_lora:
             self.model = self._apply_qlora(model, cfg["lora"])
@@ -163,24 +147,35 @@ class InternVL2Adapter(BaseAdapter):
             self.model = model
             total = sum(p.numel() for p in model.parameters())
             trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-            print(f"trainable params: {trainable:,} || all params: {total:,} || trainable%: {trainable/total*100:.4f}")
+            print(
+                f"trainable params: {trainable:,} || all params: {total:,} "
+                f"|| trainable%: {trainable / total * 100:.4f}"
+            )
 
     def load_for_inference(self, cfg: dict, checkpoint: str | None = None) -> None:
         from peft import PeftModel
 
-        self._read_model_cfg(cfg)
         model_name = cfg["model"]["name"]
+        self._max_num_tiles = cfg["model"].get("max_num_tiles", 6)
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
-        tok_src = checkpoint or model_name
-        print(f"[InternVL2] Loading tokenizer từ: {tok_src}")
-        self.processor = self._setup_tokenizer(tok_src)
+        print(f"[InternVL2] Loading tokenizer: {model_name}")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True, use_fast=False
+        )
+        self.pad_token_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+        self._im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
         print(f"[InternVL2] Loading base model: {model_name}")
         base = AutoModel.from_pretrained(
-            model_name, torch_dtype=dtype, device_map="auto", trust_remote_code=True
+            model_name,
+            torch_dtype=dtype,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
+            device_map="auto",
         )
-        self._cache_num_image_token(base)
+        base.img_context_token_id = self.tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
+        self._num_image_token = base.num_image_token
 
         if checkpoint:
             print(f"[InternVL2] Merging LoRA từ: {checkpoint}")
@@ -190,76 +185,88 @@ class InternVL2Adapter(BaseAdapter):
         self.model.eval()
 
     # ------------------------------------------------------------------ #
-    #  Text formatting                                                    #
+    #  process_batch                                                       #
     # ------------------------------------------------------------------ #
 
-    def _image_placeholder(self, num_tiles: int) -> str:
-        """<img><IMG_CONTEXT>×(num_tiles×num_image_token)</img>"""
-        ctx = IMG_CONTEXT_TOKEN * (self.num_image_token * num_tiles)
-        return f"\n{IMG_START_TOKEN}{ctx}{IMG_END_TOKEN}\n"
-
-    def _build_texts(
-        self, question: str, num_tiles: int, answer: str = "", training: bool = True
-    ) -> tuple[str, str]:
-        img_ph = self._image_placeholder(num_tiles)
-        prompt = (
-            f"<|im_start|>system\n{INTERNVL_SYSTEM}<|im_end|>\n"
-            f"<|im_start|>user\n{img_ph}{question}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
+    def _expand_image_placeholder(self, text: str, num_patches: int) -> str:
+        """<image> → <img><IMG_CONTEXT>×N</img>"""
+        image_tokens = (
+            IMG_START_TOKEN
+            + IMG_CONTEXT_TOKEN * (self._num_image_token * num_patches)
+            + IMG_END_TOKEN
         )
-        full = prompt + answer + "<|im_end|>" if (training and answer) else prompt
-        return full, prompt
-
-    # ------------------------------------------------------------------ #
-    #  process_batch                                                      #
-    # ------------------------------------------------------------------ #
+        return text.replace("<image>", image_tokens, 1)
 
     def process_batch(
         self,
         items: list[dict],
-        max_length: int = 1024,
+        max_length: int = 512,
         training: bool = True,
     ) -> dict:
         all_input_ids, all_masks, all_labels = [], [], []
-        all_pixel_values, all_image_flags = [], []
+        all_pixel_values = []
 
         for item in items:
-            pixel_values = _load_pixel_values(
-                item["image"], self.max_num_tiles, self.image_size
-            )
-            num_tiles = pixel_values.shape[0]
+            image = item["image"]
+            question = item["question"]
+            answer = item.get("answer", "")
+
+            pixel_values = _preprocess_image(
+                image, input_size=448, max_num=self._max_num_tiles
+            ).to(torch.bfloat16)
+            num_patches = pixel_values.shape[0]
             all_pixel_values.append(pixel_values)
-            all_image_flags.append(torch.ones(num_tiles, dtype=torch.long))
 
-            answer = item.get("answer", "") if training else ""
-            full_text, prompt_text = self._build_texts(
-                item["question"], num_tiles, answer, training
+            messages_user = [
+                {"role": "user", "content": f"<image>\n{question}"}
+            ]
+            prompt_text = self.tokenizer.apply_chat_template(
+                messages_user, tokenize=False, add_generation_prompt=True
             )
 
-            enc = self.processor(full_text, return_tensors="pt")
+            if training:
+                messages_full = messages_user + [
+                    {"role": "assistant", "content": answer}
+                ]
+                full_text = self.tokenizer.apply_chat_template(
+                    messages_full, tokenize=False, add_generation_prompt=False
+                )
+            else:
+                full_text = prompt_text
+
+            prompt_text = self._expand_image_placeholder(prompt_text, num_patches)
+            full_text = self._expand_image_placeholder(full_text, num_patches)
+
+            enc = self.tokenizer(
+                full_text, return_tensors="pt", add_special_tokens=False
+            )
             ids = enc.input_ids[0]
             mask = enc.attention_mask[0]
 
             if training:
-                labels = self._compute_labels(ids, full_text, prompt_text, self.processor)
+                labels = self._compute_labels(
+                    ids, full_text, prompt_text, self.tokenizer
+                )
                 all_labels.append(labels)
 
             all_input_ids.append(ids)
             all_masks.append(mask)
 
         max_len = max(t.size(0) for t in all_input_ids)
+        pixel_values_cat = torch.cat(all_pixel_values, dim=0)
+
         result = {
             "input_ids": self._pad_1d(all_input_ids, self.pad_token_id, max_len),
             "attention_mask": self._pad_1d(all_masks, 0, max_len),
-            "pixel_values": torch.cat(all_pixel_values, dim=0),
-            "image_flags": torch.cat(all_image_flags, dim=0),
+            "pixel_values": pixel_values_cat,
+            "image_flags": torch.ones(pixel_values_cat.shape[0], 1, dtype=torch.long),
         }
         if all_labels:
             result["labels"] = self._pad_1d(all_labels, -100, max_len)
         return result
 
     # ------------------------------------------------------------------ #
-    #  Generate                                                           #
+    #  Generate                                                            #
     # ------------------------------------------------------------------ #
 
     def generate(
@@ -268,16 +275,19 @@ class InternVL2Adapter(BaseAdapter):
         max_new_tokens: int = 64,
         num_beams: int = 1,
     ) -> list[str]:
-        input_len = inputs["input_ids"].shape[1]
-        gen_inputs = {k: v for k, v in inputs.items() if k != "labels"}
+        # InternVL2 custom generate() dùng inputs_embeds nội bộ,
+        # output chỉ chứa NEW tokens (không bao gồm input).
         generated = self.model.generate(
-            **gen_inputs,
+            pixel_values=inputs["pixel_values"],
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
             max_new_tokens=max_new_tokens,
             num_beams=num_beams,
             do_sample=False,
+            eos_token_id=self._im_end_id,
             pad_token_id=self.pad_token_id,
         )
         return [
-            self.processor.decode(seq[input_len:], skip_special_tokens=True).strip()
+            self.tokenizer.decode(seq, skip_special_tokens=True).strip()
             for seq in generated
         ]

@@ -1,22 +1,18 @@
-# ViTextVQA — Fine-tuning Vision-Language Models
+# ViTextVQA — Fine-tuning & Evaluation
 
-Fine-tuning các Vision-Language Model trên tập dữ liệu **ViTextVQA** (Vietnamese Text-based Visual Question Answering).
-
----
+Fine-tuning các Vision-Language Model trên tập dữ liệu **ViTextVQA** (Vietnamese Text-based VQA).
 
 ## Models được hỗ trợ
 
-| Config | Model | Params | Tiếng Việt | VRAM (train) |
-|--------|-------|:------:|:----------:|:------------:|
-| `configs/qwen2vl_2b.yaml` | Qwen/Qwen2-VL-2B-Instruct | 2B | ✅ Tốt | ~8 GB |
-| `configs/internvl2_2b.yaml` | OpenGVLab/InternVL2-2B | 2B | ✅ Tốt | ~7 GB |
-| `configs/internvl2_4b.yaml` | OpenGVLab/InternVL2-4B | 4B | ✅ Tốt | ~12 GB |
-| `configs/smolvlm_500m.yaml` | HuggingFaceTB/SmolVLM-500M-Instruct | 500M | ⚠️ Hạn chế | ~4 GB |
-| `configs/smolvlm_500m_full.yaml` | HuggingFaceTB/SmolVLM-500M-Instruct | 500M | ⚠️ Hạn chế | ~6 GB |
-| `configs/smolvlm_2b.yaml` | HuggingFaceTB/SmolVLM-Instruct | 2B | ⚠️ Hạn chế | ~8 GB |
-| `configs/smolvlm2_2b.yaml` | HuggingFaceTB/SmolVLM2-2.2B-Instruct | 2.2B | ⚠️ Hạn chế | ~8 GB |
+| Config | Model | Params | Method | VRAM (train) |
+|--------|-------|--------|--------|--------------|
+| `configs/qwen2vl_2b.yaml` | Qwen/Qwen2-VL-2B-Instruct | 2B | QLoRA 4-bit | ~8 GB |
+| `configs/internvl2_2b.yaml` | OpenGVLab/InternVL2-2B | 2.2B | QLoRA 4-bit | ~8 GB |
+| `configs/smolvlm_500m.yaml` | HuggingFaceTB/SmolVLM-500M-Instruct | 500M | LoRA (bf16) | ~4 GB |
+| `configs/smolvlm_2b.yaml` | HuggingFaceTB/SmolVLM-Instruct | 2B | QLoRA 4-bit | ~8 GB |
+| `configs/smolvlm2_2b.yaml` | HuggingFaceTB/SmolVLM2-2.2B-Instruct | 2.2B | QLoRA 4-bit | ~8 GB |
 
-> **Khuyến nghị:** Dùng **Qwen2-VL-2B** hoặc **InternVL2-4B** cho kết quả tốt nhất trên tiếng Việt.
+Hỗ trợ 3 chế độ training: **QLoRA** (4-bit + LoRA), **LoRA** (bf16 + LoRA), và **Full fine-tune** — tùy theo các section có trong config yaml.
 
 ---
 
@@ -24,32 +20,30 @@ Fine-tuning các Vision-Language Model trên tập dữ liệu **ViTextVQA** (Vi
 
 ```
 CS2230-VQA/
-├── configs/
+├── configs/                     # Config cho từng model
 │   ├── qwen2vl_2b.yaml
 │   ├── internvl2_2b.yaml
-│   ├── internvl2_4b.yaml
 │   ├── smolvlm_500m.yaml
-│   ├── smolvlm_500m_full.yaml
 │   ├── smolvlm_2b.yaml
 │   └── smolvlm2_2b.yaml
 ├── data/
-│   ├── ViTextVQA_train.json       # 35,159 samples
-│   ├── ViTextVQA_dev.json         # 5,155 samples
-│   ├── ViTextVQA_test_gt .json
-│   └── st_images/                 # ảnh *.jpg
+│   ├── ViTextVQA_train.json
+│   ├── ViTextVQA_dev.json
+│   ├── ViTextVQA_test_gt.json
+│   └── st_images/               # Ảnh (*.jpg)
 ├── src/
 │   ├── adapters/
-│   │   ├── __init__.py            # Factory: get_adapter(type)
-│   │   ├── base.py                # Abstract BaseAdapter
-│   │   ├── qwen2vl.py             # Qwen2-VL adapter
-│   │   ├── internvl2.py           # InternVL2 / InternVL2.5 adapter
-│   │   └── smolvlm.py             # SmolVLM / SmolVLM2 adapter
-│   ├── dataset.py                 # ViTextVQADataset + VQADataCollator
-│   ├── metrics.py                 # ANLS + Exact Match
-│   ├── train.py                   # Training script
-│   └── evaluate.py                # Inference + Evaluation script
-├── checkpoints/                   # LoRA checkpoints (gitignored)
-├── results/                       # Predictions JSON output
+│   │   ├── __init__.py          # Factory: get_adapter(type)
+│   │   ├── base.py              # Abstract base adapter
+│   │   ├── internvl2.py         # Adapter cho InternVL2
+│   │   ├── qwen2vl.py           # Adapter cho Qwen2-VL
+│   │   └── smolvlm.py           # Adapter cho SmolVLM / SmolVLM2
+│   ├── dataset.py               # ViTextVQADataset + VQADataCollator
+│   ├── metrics.py               # ANLS + Exact Match
+│   ├── train.py                 # Training script
+│   └── evaluate.py              # Inference + Evaluation
+├── results/                     # Predictions JSON output
+├── checkpoints/                 # Model checkpoints
 ├── requirements.txt
 └── README.md
 ```
@@ -62,39 +56,34 @@ CS2230-VQA/
 pip install -r requirements.txt
 ```
 
-Nếu dùng **InternVL2**, cài thêm:
-```bash
-pip install einops timm
-```
-
-> **Lưu ý:** `bitsandbytes` yêu cầu CUDA. Trên Colab dùng GPU T4 (16 GB) là đủ cho tất cả model 2B với QLoRA.
+> **Lưu ý:** `bitsandbytes` yêu cầu CUDA. Google Colab T4 (16 GB VRAM) là đủ cho tất cả models.
 
 ---
 
 ## Training
 
 ```bash
-# Qwen2-VL-2B (khuyến nghị cho tiếng Việt)
+# Qwen2-VL-2B — multilingual tốt, khuyến nghị cho ViTextVQA
 python -m src.train --config configs/qwen2vl_2b.yaml
 
-# InternVL2-2B
+# InternVL2-2B — vision encoder mạnh cho OCR
 python -m src.train --config configs/internvl2_2b.yaml
 
-# InternVL2-4B (cần ~12 GB VRAM)
-python -m src.train --config configs/internvl2_4b.yaml
-
-# SmolVLM-500M + LoRA (nhanh nhất)
+# SmolVLM-500M — nhẹ nhất
 python -m src.train --config configs/smolvlm_500m.yaml
 
-# SmolVLM-500M full fine-tune (không LoRA)
-python -m src.train --config configs/smolvlm_500m_full.yaml
+# SmolVLM-2B
+python -m src.train --config configs/smolvlm_2b.yaml
+
+# SmolVLM2-2.2B
+python -m src.train --config configs/smolvlm2_2b.yaml
 ```
 
-Checkpoint tốt nhất theo **ANLS trên dev set** được lưu tại `checkpoints/<model>/best_model/`.
+Checkpoint tốt nhất theo ANLS trên dev set được lưu tại `checkpoints/<model>/best_model/`.
 
 ---
 
-## Evaluation
+## Evaluation trên Test Set
 
 ```bash
 # Zero-shot (base model, không fine-tune)
@@ -107,16 +96,16 @@ python -m src.evaluate \
 
 # Chỉ định file output
 python -m src.evaluate \
-    --config configs/internvl2_2b.yaml \
-    --checkpoint checkpoints/internvl2_2b/best_model \
-    --results_file results/internvl2_2b_test.json
+    --config configs/smolvlm_500m.yaml \
+    --checkpoint checkpoints/smolvlm_500m/best_model \
+    --results_file results/smolvlm_500m_test.json
 ```
 
-Output terminal:
+Kết quả in ra terminal:
 ```
 =======================================================
   Model  : Qwen/Qwen2-VL-2B-Instruct
-  Mode   : Fine-tuned  →  checkpoints/qwen2vl_2b/best_model
+  Mode   : Fine-tuned  → checkpoints/qwen2vl_2b/best_model
 =======================================================
   ANLS         : 65.42%
   Exact Match  : 51.30%
@@ -128,49 +117,85 @@ Output terminal:
 
 ## Metrics
 
-| Metric | Mô tả |
-|--------|-------|
-| **ANLS** | Average Normalized Levenshtein Similarity — metric chính của TextVQA. Đo độ tương đồng chuỗi, threshold = 0.5 (nếu similarity < 0.5 → tính bằng 0). |
-| **Exact Match** | Tỉ lệ khớp chính xác sau khi chuẩn hóa (lowercase, Unicode NFC, bỏ ký tự đặc biệt). |
+- **ANLS** (Average Normalized Levenshtein Similarity): metric chính của TextVQA, đo độ tương đồng giữa prediction và ground truth (threshold = 0.5).
+- **Exact Match**: tỉ lệ khớp chính xác sau khi chuẩn hóa text (lowercase, bỏ dấu câu thừa, Unicode NFC).
 
 ---
 
-## Kỹ thuật tối ưu GPU
+## Adapter pattern
 
-| Kỹ thuật | Tác dụng |
-|----------|----------|
-| **QLoRA** (4-bit NF4 + LoRA r=16) | Giảm ~75% VRAM cho weights, chỉ train ~1% tham số |
-| **Gradient checkpointing** | Giảm activation memory (~20% chậm hơn) |
-| **bf16 / fp16** | Mixed precision, giảm ~50% memory cho activations |
-| **batch_size=1 + grad_accum** | Peak VRAM thấp, effective batch size vẫn lớn |
-| **max_pixels** (Qwen2-VL) | Kiểm soát số image patches, giảm sequence length |
-| **max_num_tiles** (InternVL2) | Giới hạn số tiles, kiểm soát VRAM và tốc độ |
+Mỗi model family có một adapter riêng kế thừa `BaseAdapter`, implement 4 method:
 
----
+| Method | Chức năng |
+|--------|-----------|
+| `load()` | Load model + tokenizer/processor cho training |
+| `load_for_inference()` | Load cho inference (full precision, optional LoRA merge) |
+| `process_batch()` | Xử lý raw items → batched tensors |
+| `generate()` | Chạy model.generate() và decode output |
 
-## Thêm model mới
+### Chế độ training
 
-1. Tạo `src/adapters/<model_type>.py` kế thừa `BaseAdapter`:
+Config yaml quyết định chế độ training dựa trên sự có mặt của các section:
 
-```python
-from .base import BaseAdapter
+| Section trong config | Chế độ |
+|---------------------|--------|
+| `lora` + `quantization` | QLoRA (4-bit + LoRA) |
+| `lora` (không `quantization`) | LoRA (bf16 + LoRA) |
+| Không có cả hai | Full fine-tune (bf16) |
 
-class MyModelAdapter(BaseAdapter):
-    def load(self, cfg): ...
-    def load_for_inference(self, cfg, checkpoint=None): ...
-    def process_batch(self, items, max_length=1024, training=True): ...
-    def generate(self, inputs, max_new_tokens=64, num_beams=1): ...
-```
+### Thêm model mới
 
+1. Tạo `src/adapters/<model_type>.py` kế thừa `BaseAdapter`
 2. Đăng ký trong `src/adapters/__init__.py`:
 
 ```python
-from .my_model import MyModelAdapter
-
 _REGISTRY = {
-    ...,
-    "mymodel": MyModelAdapter,
+    "internvl2": InternVL2Adapter,
+    "qwen2vl": Qwen2VLAdapter,
+    "smolvlm": SmolVLMAdapter,
+    "mymodel": MyModelAdapter,   # thêm vào đây
 }
 ```
 
-3. Tạo `configs/mymodel.yaml` với `model.type: "mymodel"`.
+3. Tạo config `configs/mymodel.yaml` với `model.type: "mymodel"`
+
+---
+
+## Tùy chỉnh config
+
+### Giảm VRAM
+
+```yaml
+model:
+  max_pixels: 512      # Qwen2-VL: giảm resolution ảnh
+  max_num_tiles: 2     # InternVL2: giảm số tiles
+
+training:
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 32
+
+lora:
+  r: 8                 # Giảm LoRA rank
+```
+
+### Tăng tốc training
+
+```yaml
+training:
+  eval_steps: 2000               # Giảm tần suất eval (eval dùng generate, rất chậm)
+  per_device_train_batch_size: 4  # Tăng batch nếu đủ VRAM
+  gradient_accumulation_steps: 4
+  dataloader_num_workers: 4
+```
+
+---
+
+## Kỹ thuật tiết kiệm GPU
+
+| Kỹ thuật | Tác dụng |
+|----------|----------|
+| **4-bit NF4 quantization** | Giảm ~75% VRAM cho base model weights |
+| **LoRA r=16** | Chỉ train ~1% tham số, bỏ optimizer states cho 99% model |
+| **Gradient checkpointing** | Giảm activation memory (đánh đổi ~20% tốc độ) |
+| **batch_size=1 + grad_accum** | Peak VRAM thấp, effective batch size vẫn lớn |
+| **bf16 / fp16** | Mixed precision, giảm ~50% memory cho activations |

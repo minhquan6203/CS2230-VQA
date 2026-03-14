@@ -13,9 +13,9 @@ from .qwen2vl import Qwen2VLAdapter
 from .smolvlm import SmolVLMAdapter
 
 _REGISTRY: dict[str, type[BaseAdapter]] = {
+    "internvl2": InternVL2Adapter,
     "qwen2vl": Qwen2VLAdapter,
     "smolvlm": SmolVLMAdapter,
-    "internvl2": InternVL2Adapter,
 }
 
 

@@ -31,20 +31,38 @@ class Qwen2VLAdapter(BaseAdapter):
     # ------------------------------------------------------------------ #
 
     def load(self, cfg: dict) -> None:
-        """Training mode: QLoRA."""
+        """Training mode: full fine-tune hoặc QLoRA tuỳ config."""
         model_name = cfg["model"]["name"]
+        use_lora = "lora" in cfg
+        use_quant = "quantization" in cfg
+
         print(f"[Qwen2-VL] Loading processor: {model_name}")
         self.processor = self._build_processor(model_name, cfg["model"])
         self.pad_token_id = self.processor.tokenizer.pad_token_id or 0
 
-        print(f"[Qwen2-VL] Loading model (4-bit): {model_name}")
-        model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name,
-            quantization_config=self._build_bnb_config(cfg["quantization"]),
+        load_kwargs = dict(
             device_map="auto",
             torch_dtype=torch.bfloat16,
         )
-        self.model = self._apply_qlora(model, cfg["lora"])
+        if use_quant:
+            print(f"[Qwen2-VL] Loading model (4-bit): {model_name}")
+            load_kwargs["quantization_config"] = self._build_bnb_config(cfg["quantization"])
+        else:
+            print(f"[Qwen2-VL] Loading model (bf16): {model_name}")
+
+        model = Qwen2VLForConditionalGeneration.from_pretrained(model_name, **load_kwargs)
+
+        if use_lora:
+            self.model = self._apply_qlora(model, cfg["lora"])
+        else:
+            model.train()
+            self.model = model
+            total = sum(p.numel() for p in model.parameters())
+            trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            print(
+                f"trainable params: {trainable:,} || all params: {total:,} "
+                f"|| trainable%: {trainable / total * 100:.4f}"
+            )
 
     def load_for_inference(self, cfg: dict, checkpoint: str | None = None) -> None:
         """Inference mode: full precision, optional LoRA merge."""
@@ -89,16 +107,12 @@ class Qwen2VLAdapter(BaseAdapter):
 
             messages_user = [
                 {
-                    "role": "system",
-                    "content": "Bạn là trợ lý AI hữu ích, chuyên trả lời các câu hỏi về nội dung trong ảnh bằng tiếng Việt.",
-                },
-                {
                     "role": "user",
                     "content": [
                         {"type": "image", "image": image},
                         {"type": "text", "text": question},
                     ],
-                },
+                }
             ]
             prompt_text = self.processor.apply_chat_template(
                 messages_user, tokenize=False, add_generation_prompt=True

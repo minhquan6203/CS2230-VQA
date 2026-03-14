@@ -155,10 +155,13 @@ def train(config_path: str):
     print("Bắt đầu training...")
     trainer.train()
 
-    # Lưu LoRA adapter + processor
     best_path = os.path.join(t_cfg["output_dir"], "best_model")
+    os.makedirs(best_path, exist_ok=True)
     adapter.model.save_pretrained(best_path)
-    adapter.processor.save_pretrained(best_path)
+    if hasattr(adapter, "tokenizer") and adapter.tokenizer is not None:
+        adapter.tokenizer.save_pretrained(best_path)
+    elif adapter.processor is not None:
+        adapter.processor.save_pretrained(best_path)
     print(f"Đã lưu checkpoint tại: {best_path}")
 
 
