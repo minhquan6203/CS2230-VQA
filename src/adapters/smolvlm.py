@@ -151,31 +151,26 @@ class SmolVLMAdapter(BaseAdapter):
         )
 
         # Truncate thủ công: chỉ cắt các tensor có seq_dim == 1
+        # Làm trực tiếp trên dict để tránh lỗi BatchFeature.__init__() với pixel_values
+        result = dict(enc)
         seq_len = enc.input_ids.shape[1]
         if seq_len > max_length:
-            truncated = {}
-            for k, v in enc.items():
+            for k, v in result.items():
                 if isinstance(v, torch.Tensor) and v.ndim >= 2 and v.shape[1] == seq_len:
-                    truncated[k] = v[:, :max_length]
-                else:
-                    truncated[k] = v
-            enc = type(enc)(**truncated)
-
-        result = dict(enc)
+                    result[k] = v[:, :max_length]
 
         if training:
-            labels = enc.input_ids.clone()
+            input_ids = result["input_ids"]
+            attention_mask = result["attention_mask"]
+            labels = input_ids.clone()
             for i, (full_text, prompt_text) in enumerate(zip(full_texts, prompt_texts)):
                 answer_ids = self.processor.tokenizer.encode(
                     full_text[len(prompt_text):], add_special_tokens=False
                 )
-                # Dùng real_len (không tính padding) thay vì total padded length
-                # để tránh tính sai prompt_len khi sequence ngắn hơn max_length
-                real_len = int(enc.attention_mask[i].sum().item())
+                real_len = int(attention_mask[i].sum().item())
                 prompt_len = max(0, real_len - len(answer_ids))
                 labels[i, :prompt_len] = -100
-            # Mask padding tokens trong labels
-            labels[enc.input_ids == self.pad_token_id] = -100
+            labels[input_ids == self.pad_token_id] = -100
             result["labels"] = labels
 
         return result
