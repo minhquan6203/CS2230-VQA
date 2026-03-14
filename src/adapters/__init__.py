@@ -8,12 +8,14 @@ Thêm model mới:
 """
 
 from .base import BaseAdapter
+from .internvl2 import InternVL2Adapter
 from .qwen2vl import Qwen2VLAdapter
 from .smolvlm import SmolVLMAdapter
 
 _REGISTRY: dict[str, type[BaseAdapter]] = {
     "qwen2vl": Qwen2VLAdapter,
     "smolvlm": SmolVLMAdapter,
+    "internvl2": InternVL2Adapter,
 }
 
 

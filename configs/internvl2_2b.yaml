@@ -1,6 +1,8 @@
 model:
-  name: "HuggingFaceTB/SmolVLM-500M-Instruct"
-  type: "smolvlm"
+  name: "OpenGVLab/InternVL2-2B"
+  type: "internvl2"
+  image_size: 448       # kích thước mỗi tile
+  max_num_tiles: 6      # tối đa 6 tiles + 1 thumbnail = 7 tiles/ảnh
 
 data:
   train_file: "data/ViTextVQA_train.json"
@@ -9,12 +11,12 @@ data:
   image_dir: "data/st_images"
 
 training:
-  output_dir: "checkpoints/smolvlm_500m_full"
+  output_dir: "checkpoints/internvl2_2b"
   num_train_epochs: 3
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 8    # effective batch = 16
-  learning_rate: 5.0e-5             # nhỏ hơn so với LoRA để tránh catastrophic forgetting
+  learning_rate: 2.0e-4
   weight_decay: 0.01
   warmup_ratio: 0.03
   max_length: 1024
@@ -29,11 +31,22 @@ training:
   report_to: "none"
   seed: 42
 
-# Không có section lora và quantization → full fine-tune
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
 
 evaluation:
   checkpoint: null
-  batch_size: 8
+  batch_size: 4
   max_new_tokens: 64
   num_beams: 1
-  results_file: "results/smolvlm_500m_full_test.json"
+  results_file: "results/internvl2_2b_test.json"

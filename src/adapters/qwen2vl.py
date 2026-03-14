@@ -89,12 +89,16 @@ class Qwen2VLAdapter(BaseAdapter):
 
             messages_user = [
                 {
+                    "role": "system",
+                    "content": "Bạn là trợ lý AI hữu ích, chuyên trả lời các câu hỏi về nội dung trong ảnh bằng tiếng Việt.",
+                },
+                {
                     "role": "user",
                     "content": [
                         {"type": "image", "image": image},
                         {"type": "text", "text": question},
                     ],
-                }
+                },
             ]
             prompt_text = self.processor.apply_chat_template(
                 messages_user, tokenize=False, add_generation_prompt=True
