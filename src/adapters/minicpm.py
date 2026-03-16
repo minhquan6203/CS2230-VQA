@@ -201,7 +201,7 @@ class MiniCPMAdapter(BaseAdapter):
         load_kwargs = dict(
             device_map=self._get_device_map(cfg["model"].get("device")),
             trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         if use_quant:
             print(f"[MiniCPM] Loading model (4-bit): {model_name}")
@@ -247,7 +247,7 @@ class MiniCPMAdapter(BaseAdapter):
         print(f"[MiniCPM] Loading base model: {model_name}")
         base = AutoModel.from_pretrained(
             model_name,
-            torch_dtype=dtype,
+            dtype=dtype,
             trust_remote_code=True,
             device_map=self._get_device_map(cfg["model"].get("device")),
         )

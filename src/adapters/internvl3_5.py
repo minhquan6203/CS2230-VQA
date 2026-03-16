@@ -8,7 +8,7 @@ Supported models:
 
 Đặc điểm:
   - Kế thừa toàn bộ logic xử lý ảnh / batch / generate từ InternVL2Adapter
-  - LLM backbone chuyển sang Qwen3 → dùng torch_dtype thay vì dtype khi load model
+  - LLM backbone chuyển sang Qwen3 → dùng dtype khi load model
   - Cascade RL training pipeline (CPT + SFT + CascadeRL)
   - Yêu cầu transformers>=4.52.1
 """
@@ -20,7 +20,7 @@ from .internvl2 import InternVL2Adapter, _patch_meta_linspace, IMG_CONTEXT_TOKEN
 
 
 class InternVL3_5Adapter(InternVL2Adapter):
-    """InternVL3.5 — kế thừa InternVL2, chỉ override load để dùng torch_dtype."""
+    """InternVL3.5 — kế thừa InternVL2, override load cho Qwen3 LLM backbone."""
 
     # process_batch, generate, _expand_image_placeholder, _apply_qlora
     # đều kế thừa từ InternVL2Adapter (interface giống hệt).
@@ -40,7 +40,7 @@ class InternVL3_5Adapter(InternVL2Adapter):
         self._im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
         load_kwargs = dict(
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             trust_remote_code=True,
             device_map=self._get_device_map(cfg["model"].get("device")),
         )
@@ -87,7 +87,7 @@ class InternVL3_5Adapter(InternVL2Adapter):
         with _patch_meta_linspace():
             base = AutoModel.from_pretrained(
                 model_name,
-                torch_dtype=dtype,
+                dtype=dtype,
                 trust_remote_code=True,
                 device_map=self._get_device_map(cfg["model"].get("device")),
             )

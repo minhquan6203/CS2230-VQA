@@ -44,7 +44,7 @@ class Qwen2VLAdapter(BaseAdapter):
 
         load_kwargs = dict(
             device_map=self._get_device_map(cfg["model"].get("device")),
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         if use_quant:
             print(f"[Qwen2-VL] Loading model (4-bit): {model_name}")
@@ -80,7 +80,7 @@ class Qwen2VLAdapter(BaseAdapter):
 
         print(f"[Qwen2-VL] Loading base model: {model_name}")
         base = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name, torch_dtype=dtype, device_map=self._get_device_map(cfg["model"].get("device"))
+            model_name, dtype=dtype, device_map=self._get_device_map(cfg["model"].get("device"))
         )
         if checkpoint:
             print(f"[Qwen2-VL] Merging LoRA từ: {checkpoint}")
