@@ -1,79 +1,84 @@
 """
 Metrics cho ViTextVQA:
-- ANLS (Average Normalized Levenshtein Similarity): metric chính của TextVQA
+- F1 Score (set-based, token-level): metric chính
 - Exact Match (EM): metric phụ
 """
 
 import re
 import unicodedata
-from Levenshtein import distance as levenshtein_distance
 
 
-def normalize_answer(text: str) -> str:
-    """Chuẩn hóa text trước khi so sánh."""
-    # Unicode normalization (quan trọng cho tiếng Việt)
-    text = unicodedata.normalize("NFC", text)
-    text = text.lower().strip()
-    # Xóa dấu chấm câu thừa ở đầu/cuối
-    text = re.sub(r"[^\w\s\u00C0-\u024F\u1E00-\u1EFF]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+def preprocess_sentence(sentence: str) -> str:
+    """Chuẩn hóa text: lowercase, NFC, tách punctuation thành token riêng."""
+    sentence = sentence.lower()
+    sentence = unicodedata.normalize("NFC", sentence)
+    sentence = re.sub(r"[""]", '"', sentence)
+    for ch in r'!?:;,"\'\(\)\[\]/.\-$&*':
+        sentence = sentence.replace(ch, f" {ch} ")
+    sentence = re.sub(r"\s+", " ", sentence).strip()
+    return sentence
 
 
-def anls_score(prediction: str, ground_truths: list[str], threshold: float = 0.5) -> float:
+def f1_score(prediction: str, ground_truths: list[str]) -> float:
     """
-    Tính ANLS cho 1 câu hỏi.
-    ANLS = max similarity với tất cả ground truth answers.
-    Nếu similarity < threshold thì tính = 0 (penalize các câu trả lời sai hoàn toàn).
+    Set-based token-level F1 cho 1 câu hỏi.
+    Lấy max F1 với tất cả ground truth answers.
     """
-    pred = normalize_answer(prediction)
+    pred_tokens = preprocess_sentence(prediction).split()
 
-    max_sim = 0.0
+    best_f1 = 0.0
     for gt in ground_truths:
-        gt = normalize_answer(gt)
-        nl = max(len(pred), len(gt))
-        if nl == 0:
-            sim = 1.0
-        else:
-            edit_dist = levenshtein_distance(pred, gt)
-            sim = 1.0 - edit_dist / nl
-        max_sim = max(max_sim, sim)
+        gt_tokens = preprocess_sentence(gt).split()
+        if not gt_tokens and not pred_tokens:
+            best_f1 = max(best_f1, 1.0)
+            continue
+        if not gt_tokens or not pred_tokens:
+            continue
 
-    return max_sim if max_sim >= threshold else 0.0
+        common = set(pred_tokens) & set(gt_tokens)
+        if not common:
+            continue
+
+        precision = len(common) / len(set(pred_tokens))
+        recall = len(common) / len(set(gt_tokens))
+        f1 = 2 * precision * recall / (precision + recall)
+        best_f1 = max(best_f1, f1)
+
+    return best_f1
 
 
 def exact_match_score(prediction: str, ground_truths: list[str]) -> float:
     """Exact match sau khi chuẩn hóa."""
-    pred = normalize_answer(prediction)
-    return float(any(normalize_answer(gt) == pred for gt in ground_truths))
+    pred = preprocess_sentence(prediction)
+    return float(any(preprocess_sentence(gt) == pred for gt in ground_truths))
 
 
 def compute_metrics(predictions: list[str], ground_truths: list[list[str]]) -> dict:
     """
-    Tính ANLS và EM trên toàn bộ tập dữ liệu.
+    Tính F1 và EM trên toàn bộ tập dữ liệu.
 
     Args:
         predictions: danh sách câu trả lời dự đoán
         ground_truths: danh sách các câu trả lời đúng (mỗi câu hỏi có thể có nhiều đáp án)
 
     Returns:
-        {"anls": float, "exact_match": float, "num_samples": int}
+        {"f1": float, "exact_match": float, "num_samples": int}
     """
     assert len(predictions) == len(ground_truths), (
         f"Số lượng predictions ({len(predictions)}) "
         f"không khớp ground_truths ({len(ground_truths)})"
     )
 
-    total_anls = 0.0
+    total_f1 = 0.0
     total_em = 0.0
 
     for pred, gts in zip(predictions, ground_truths):
-        total_anls += anls_score(pred, gts)
+        total_f1 += f1_score(pred, gts)
         total_em += exact_match_score(pred, gts)
 
     n = len(predictions)
     return {
-        "anls": total_anls / n if n > 0 else 0.0,
+        "f1": total_f1 / n if n > 0 else 0.0,
         "exact_match": total_em / n if n > 0 else 0.0,
         "num_samples": n,
     }

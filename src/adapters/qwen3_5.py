@@ -24,6 +24,13 @@ from .base import BaseAdapter
 
 class Qwen3_5Adapter(BaseAdapter):
 
+    def _build_processor(self, model_name: str, model_cfg: dict) -> AutoProcessor:
+        min_pixels = model_cfg.get("min_pixels", 256) * 28 * 28
+        max_pixels = model_cfg.get("max_pixels", 1280) * 28 * 28
+        return AutoProcessor.from_pretrained(
+            model_name, min_pixels=min_pixels, max_pixels=max_pixels
+        )
+
     # ------------------------------------------------------------------ #
     #  Load                                                                #
     # ------------------------------------------------------------------ #
@@ -35,7 +42,7 @@ class Qwen3_5Adapter(BaseAdapter):
         use_quant = "quantization" in cfg
 
         print(f"[Qwen3.5] Loading processor: {model_name}")
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.processor = self._build_processor(model_name, cfg["model"])
         self.pad_token_id = (
             self.processor.tokenizer.pad_token_id
             if self.processor.tokenizer.pad_token_id is not None
@@ -44,7 +51,7 @@ class Qwen3_5Adapter(BaseAdapter):
 
         load_kwargs = dict(
             device_map=self._get_device_map(cfg["model"].get("device")),
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         if use_quant:
             print(f"[Qwen3.5] Loading model (4-bit): {model_name}")
@@ -75,7 +82,7 @@ class Qwen3_5Adapter(BaseAdapter):
 
         proc_src = checkpoint or model_name
         print(f"[Qwen3.5] Loading processor từ: {proc_src}")
-        self.processor = AutoProcessor.from_pretrained(proc_src)
+        self.processor = self._build_processor(proc_src, cfg["model"])
         self.pad_token_id = (
             self.processor.tokenizer.pad_token_id
             if self.processor.tokenizer.pad_token_id is not None
@@ -85,7 +92,7 @@ class Qwen3_5Adapter(BaseAdapter):
         print(f"[Qwen3.5] Loading base model: {model_name}")
         base = AutoModelForImageTextToText.from_pretrained(
             model_name,
-            torch_dtype=dtype,
+            dtype=dtype,
             device_map=self._get_device_map(cfg["model"].get("device")),
         )
         if checkpoint:
@@ -149,12 +156,10 @@ class Qwen3_5Adapter(BaseAdapter):
             return_tensors="pt",
         )
 
+        # Không truncate input_ids: image placeholder tokens nằm trong input_ids,
+        # cắt sẽ gây mismatch với pixel_values → crash khi tính position_ids.
+        # Kiểm soát độ dài qua image resolution / processor settings.
         result = dict(enc)
-        seq_len = enc.input_ids.shape[1]
-        if seq_len > max_length:
-            for k, v in result.items():
-                if isinstance(v, torch.Tensor) and v.ndim >= 2 and v.shape[1] == seq_len:
-                    result[k] = v[:, :max_length]
 
         if training:
             input_ids = result["input_ids"]

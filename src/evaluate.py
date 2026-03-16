@@ -107,7 +107,7 @@ def evaluate(config_path: str, checkpoint: str | None = None, results_file: str 
     mode = f"Fine-tuned  → {checkpoint}" if checkpoint else "Base model (zero-shot)"
     print(f"  Mode   : {mode}")
     print("=" * 55)
-    print(f"  ANLS         : {metrics['anls']*100:.2f}%")
+    print(f"  F1           : {metrics['f1']*100:.2f}%")
     print(f"  Exact Match  : {metrics['exact_match']*100:.2f}%")
     print(f"  Num samples  : {metrics['num_samples']:,}")
     print("=" * 55)
