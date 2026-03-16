@@ -4,11 +4,10 @@ model:
   device: "cuda:0"  # chỉ định GPU: "cuda:0", "cuda:1", ... | null = để HF tự phân bổ
 
 data:
-  train_file: "data/ViTextVQA_train.json"
-  dev_file: "data/ViTextVQA_dev.json"
-  test_file: "data/ViTextVQA_test_gt.json"
-  image_dir: "data/st_images"
-
+  train_file: "../data/ViTextVQA_train.json"
+  dev_file: "../data/ViTextVQA_dev.json"
+  test_file: "../data/ViTextVQA_test_gt.json"
+  image_dir: "../data/st_images"
 training:
   output_dir: "checkpoints/minicpm_v_2_5"
   num_train_epochs: 3

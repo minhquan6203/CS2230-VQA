@@ -6,10 +6,10 @@ model:
   max_pixels: 512   # 512 * 28 * 28 ≈ 400K pixels → ~512 patches tối đa
 
 data:
-  train_file: "data/ViTextVQA_train.json"
-  dev_file: "data/ViTextVQA_dev.json"
-  test_file: "data/ViTextVQA_test_gt.json"
-  image_dir: "data/st_images"
+  train_file: "../data/ViTextVQA_train.json"
+  dev_file: "../data/ViTextVQA_dev.json"
+  test_file: "../data/ViTextVQA_test_gt.json"
+  image_dir: "../data/st_images"
 
 training:
   output_dir: "checkpoints/qwen2vl_2b"

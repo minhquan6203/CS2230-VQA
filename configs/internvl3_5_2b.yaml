@@ -5,10 +5,10 @@ model:
   max_num_tiles: 6   # mỗi tile = 256 tokens, max 7 tiles (6+thumbnail) = 1792 image tokens
 
 data:
-  train_file: "data/ViTextVQA_train.json"
-  dev_file: "data/ViTextVQA_dev.json"
-  test_file: "data/ViTextVQA_test_gt.json"
-  image_dir: "data/st_images"
+  train_file: "../data/ViTextVQA_train.json"
+  dev_file: "../data/ViTextVQA_dev.json"
+  test_file: "../data/ViTextVQA_test_gt.json"
+  image_dir: "../data/st_images"
 
 training:
   output_dir: "checkpoints/internvl3_5_2b"
