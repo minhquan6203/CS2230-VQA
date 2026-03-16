@@ -5,18 +5,45 @@ Metrics cho ViTextVQA:
 """
 
 import re
+import string
 import unicodedata
+
+
+def normalize_text(text: str) -> str:
+    """Xóa punctuation, lowercase, strip."""
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    text = text.lower().strip()
+    return text
 
 
 def preprocess_sentence(sentence: str) -> str:
     """Chuẩn hóa text: lowercase, NFC, tách punctuation thành token riêng."""
     sentence = sentence.lower()
     sentence = unicodedata.normalize("NFC", sentence)
-    sentence = re.sub(r"[""]", '"', sentence)
-    for ch in r'!?:;,"\'\(\)\[\]/.\-$&*':
-        sentence = sentence.replace(ch, f" {ch} ")
+    sentence = re.sub(r'[\u201c\u201d]', '"', sentence)
+    sentence = re.sub(r"!", " ! ", sentence)
+    sentence = re.sub(r"\?", " ? ", sentence)
+    sentence = re.sub(r":", " : ", sentence)
+    sentence = re.sub(r";", " ; ", sentence)
+    sentence = re.sub(r",", " , ", sentence)
+    sentence = re.sub(r'"', ' " ', sentence)
+    sentence = re.sub(r"'", " ' ", sentence)
+    sentence = re.sub(r"\(", " ( ", sentence)
+    sentence = re.sub(r"\[", " [ ", sentence)
+    sentence = re.sub(r"\)", " ) ", sentence)
+    sentence = re.sub(r"\]", " ] ", sentence)
+    sentence = re.sub(r"/", " / ", sentence)
+    sentence = re.sub(r"\.", " . ", sentence)
+    sentence = re.sub(r"-", " - ", sentence)
+    sentence = re.sub(r"\$", " $ ", sentence)
+    sentence = re.sub(r"\&", " & ", sentence)
+    sentence = re.sub(r"\*", " * ", sentence)
     sentence = re.sub(r"\s+", " ", sentence).strip()
     return sentence
+
+
+def _normalize(text: str) -> str:
+    return preprocess_sentence(normalize_text(text))
 
 
 def f1_score(prediction: str, ground_truths: list[str]) -> float:
@@ -24,15 +51,13 @@ def f1_score(prediction: str, ground_truths: list[str]) -> float:
     Set-based token-level F1 cho 1 câu hỏi.
     Lấy max F1 với tất cả ground truth answers.
     """
-    pred_tokens = preprocess_sentence(prediction).split()
+    pred_tokens = _normalize(prediction).split()
 
     best_f1 = 0.0
     for gt in ground_truths:
-        gt_tokens = preprocess_sentence(gt).split()
-        if not gt_tokens and not pred_tokens:
-            best_f1 = max(best_f1, 1.0)
-            continue
-        if not gt_tokens or not pred_tokens:
+        gt_tokens = _normalize(gt).split()
+        if len(pred_tokens) == 0 or len(gt_tokens) == 0:
+            best_f1 = max(best_f1, int(pred_tokens == gt_tokens))
             continue
 
         common = set(pred_tokens) & set(gt_tokens)
@@ -49,8 +74,8 @@ def f1_score(prediction: str, ground_truths: list[str]) -> float:
 
 def exact_match_score(prediction: str, ground_truths: list[str]) -> float:
     """Exact match sau khi chuẩn hóa."""
-    pred = preprocess_sentence(prediction)
-    return float(any(preprocess_sentence(gt) == pred for gt in ground_truths))
+    pred = _normalize(prediction)
+    return float(any(_normalize(gt) == pred for gt in ground_truths))
 
 
 def compute_metrics(predictions: list[str], ground_truths: list[list[str]]) -> dict:

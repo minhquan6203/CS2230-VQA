@@ -168,6 +168,7 @@ class InternVL2Adapter(BaseAdapter):
         """Training mode: full fine-tune hoặc QLoRA tuỳ config."""
         model_name = cfg["model"]["name"]
         self._max_num_tiles = cfg["model"].get("max_num_tiles", 6)
+        self._load_system_prompt(cfg)
         use_lora = "lora" in cfg
         use_quant = "quantization" in cfg
 
@@ -213,6 +214,7 @@ class InternVL2Adapter(BaseAdapter):
 
         model_name = cfg["model"]["name"]
         self._max_num_tiles = cfg["model"].get("max_num_tiles", 6)
+        self._load_system_prompt(cfg)
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
         print(f"[InternVL2] Loading tokenizer: {model_name}")
@@ -273,15 +275,15 @@ class InternVL2Adapter(BaseAdapter):
             num_patches = pixel_values.shape[0]
             all_pixel_values.append(pixel_values)
 
-            messages_user = [
+            messages_prompt = self._prepend_system([
                 {"role": "user", "content": f"<image>\n{question}"}
-            ]
+            ])
             prompt_text = self.tokenizer.apply_chat_template(
-                messages_user, tokenize=False, add_generation_prompt=True
+                messages_prompt, tokenize=False, add_generation_prompt=True
             )
 
             if training:
-                messages_full = messages_user + [
+                messages_full = messages_prompt + [
                     {"role": "assistant", "content": answer}
                 ]
                 full_text = self.tokenizer.apply_chat_template(

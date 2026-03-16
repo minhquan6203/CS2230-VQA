@@ -46,6 +46,7 @@ class InternVL3_5Adapter(InternVL2Adapter):
         """Training mode: full fine-tune hoặc QLoRA tuỳ config."""
         model_name = cfg["model"]["name"]
         self._max_num_tiles = cfg["model"].get("max_num_tiles", 6)
+        self._load_system_prompt(cfg)
         use_lora = "lora" in cfg
         use_quant = "quantization" in cfg
 
@@ -91,6 +92,7 @@ class InternVL3_5Adapter(InternVL2Adapter):
 
         model_name = cfg["model"]["name"]
         self._max_num_tiles = cfg["model"].get("max_num_tiles", 6)
+        self._load_system_prompt(cfg)
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
         print(f"[InternVL3.5] Loading tokenizer: {model_name}")

@@ -18,6 +18,16 @@ class BaseAdapter(ABC):
     model: Any = None
     processor: Any = None
     pad_token_id: int = 0
+    system_prompt: str | None = None
+
+    def _load_system_prompt(self, cfg: dict) -> None:
+        self.system_prompt = cfg.get("system_prompt")
+
+    def _prepend_system(self, messages: list[dict]) -> list[dict]:
+        """Prepend system message nếu có system_prompt."""
+        if self.system_prompt:
+            return [{"role": "system", "content": self.system_prompt}] + messages
+        return messages
 
     @staticmethod
     def _get_device_map(device: str | None = None):

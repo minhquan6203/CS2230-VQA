@@ -1,3 +1,5 @@
+system_prompt: "Dựa trên hình ảnh được cung cấp, hãy trả lời bằng tiếng Việt. Câu trả lời cần ngắn gọn, trực tiếp vào vấn đề mà không cần sử dụng chủ ngữ. Chỉ sử dụng các OCR xuất hiện trong hình ảnh cho câu trả lời."
+
 model:
   name: "HuggingFaceTB/SmolVLM-Instruct"
   type: "smolvlm"

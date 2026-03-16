@@ -38,6 +38,7 @@ class Qwen2VLAdapter(BaseAdapter):
         use_lora = "lora" in cfg
         use_quant = "quantization" in cfg
 
+        self._load_system_prompt(cfg)
         print(f"[Qwen2-VL] Loading processor: {model_name}")
         self.processor = self._build_processor(model_name, cfg["model"])
         self.pad_token_id = self.processor.tokenizer.pad_token_id or 0
@@ -73,6 +74,7 @@ class Qwen2VLAdapter(BaseAdapter):
         model_name = cfg["model"]["name"]
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
+        self._load_system_prompt(cfg)
         proc_src = checkpoint or model_name
         print(f"[Qwen2-VL] Loading processor từ: {proc_src}")
         self.processor = self._build_processor(proc_src, cfg["model"])
@@ -107,28 +109,27 @@ class Qwen2VLAdapter(BaseAdapter):
             question = item["question"]
             answer = item.get("answer", "")
 
-            messages_user = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image},
-                        {"type": "text", "text": question},
-                    ],
-                }
-            ]
+            user_msg = {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": question},
+                ],
+            }
+            messages_prompt = self._prepend_system([user_msg])
             prompt_text = self.processor.apply_chat_template(
-                messages_user, tokenize=False, add_generation_prompt=True
+                messages_prompt, tokenize=False, add_generation_prompt=True
             )
 
             if training:
-                messages_full = messages_user + [{"role": "assistant", "content": answer}]
+                messages_full = messages_prompt + [{"role": "assistant", "content": answer}]
                 full_text = self.processor.apply_chat_template(
                     messages_full, tokenize=False, add_generation_prompt=False
                 )
             else:
                 full_text = prompt_text
 
-            image_inputs, _ = process_vision_info(messages_user)
+            image_inputs, _ = process_vision_info(messages_prompt)
             enc = self.processor(
                 text=[full_text],
                 images=image_inputs,

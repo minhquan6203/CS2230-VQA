@@ -43,6 +43,7 @@ class Qwen3_5Adapter(BaseAdapter):
         use_lora = "lora" in cfg
         use_quant = "quantization" in cfg
 
+        self._load_system_prompt(cfg)
         print(f"[Qwen3.5] Loading processor: {model_name}")
         self.processor = self._build_processor(model_name, cfg["model"])
         self.pad_token_id = (
@@ -82,6 +83,7 @@ class Qwen3_5Adapter(BaseAdapter):
         model_name = cfg["model"]["name"]
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
+        self._load_system_prompt(cfg)
         proc_src = checkpoint or model_name
         print(f"[Qwen3.5] Loading processor từ: {proc_src}")
         self.processor = self._build_processor(proc_src, cfg["model"])
@@ -115,23 +117,22 @@ class Qwen3_5Adapter(BaseAdapter):
         full_texts, prompt_texts, images = [], [], []
 
         for item in items:
-            messages_user = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": item["question"]},
-                    ],
-                }
-            ]
+            user_msg = {
+                "role": "user",
+                "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": item["question"]},
+                ],
+            }
+            messages_prompt = self._prepend_system([user_msg])
             prompt_text = self.processor.apply_chat_template(
-                messages_user, tokenize=False, add_generation_prompt=True
+                messages_prompt, tokenize=False, add_generation_prompt=True
             )
             prompt_texts.append(prompt_text)
             images.append(item["image"])
 
             if training:
-                messages_full = messages_user + [
+                messages_full = messages_prompt + [
                     {"role": "assistant", "content": item.get("answer", "")}
                 ]
                 full_text = self.processor.apply_chat_template(

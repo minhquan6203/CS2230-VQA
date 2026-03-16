@@ -148,12 +148,12 @@ class MiniCPMAdapter(BaseAdapter):
 
     def _build_texts(self, item: dict, training: bool) -> tuple[str, str]:
         image_prefix = "(<image>./</image>)\n"
-        prompt_messages = [
+        prompt_messages = self._prepend_system([
             {
                 "role": "user",
                 "content": image_prefix + item["question"],
             }
-        ]
+        ])
         prompt_text = self.tokenizer.apply_chat_template(
             prompt_messages,
             tokenize=False,
@@ -182,6 +182,7 @@ class MiniCPMAdapter(BaseAdapter):
 
     def load(self, cfg: dict) -> None:
         model_name = cfg["model"]["name"]
+        self._load_system_prompt(cfg)
         use_lora = "lora" in cfg
         use_quant = "quantization" in cfg
 
@@ -228,6 +229,7 @@ class MiniCPMAdapter(BaseAdapter):
         from peft import PeftModel
 
         model_name = cfg["model"]["name"]
+        self._load_system_prompt(cfg)
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
         proc_src = checkpoint or model_name

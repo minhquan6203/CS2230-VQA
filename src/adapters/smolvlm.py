@@ -30,6 +30,7 @@ class SmolVLMAdapter(BaseAdapter):
     def load(self, cfg: dict) -> None:
         """Training mode: full fine-tune hoặc QLoRA tuỳ config."""
         model_name = cfg["model"]["name"]
+        self._load_system_prompt(cfg)
         use_lora = "lora" in cfg
         use_quant = "quantization" in cfg
 
@@ -68,6 +69,7 @@ class SmolVLMAdapter(BaseAdapter):
         from peft import PeftModel
 
         model_name = cfg["model"]["name"]
+        self._load_system_prompt(cfg)
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
         proc_src = checkpoint or model_name
@@ -104,23 +106,22 @@ class SmolVLMAdapter(BaseAdapter):
         full_texts, prompt_texts, images = [], [], []
 
         for item in items:
-            messages_user = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": item["question"]},
-                    ],
-                }
-            ]
+            user_msg = {
+                "role": "user",
+                "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": item["question"]},
+                ],
+            }
+            messages_prompt = self._prepend_system([user_msg])
             prompt_text = self.processor.apply_chat_template(
-                messages_user, tokenize=False, add_generation_prompt=True
+                messages_prompt, tokenize=False, add_generation_prompt=True
             )
             prompt_texts.append(prompt_text)
             images.append(item["image"])
 
             if training:
-                messages_full = messages_user + [
+                messages_full = messages_prompt + [
                     {"role": "assistant", "content": item.get("answer", "")}
                 ]
                 full_text = self.processor.apply_chat_template(
