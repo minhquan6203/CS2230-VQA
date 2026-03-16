@@ -42,7 +42,7 @@ class SmolVLMAdapter(BaseAdapter):
         )
 
         load_kwargs = dict(
-            device_map=self._get_device_map(),
+            device_map=self._get_device_map(cfg["model"].get("device")),
             torch_dtype=torch.bfloat16,
             _attn_implementation="eager",
         )
@@ -83,7 +83,7 @@ class SmolVLMAdapter(BaseAdapter):
         base = AutoModelForVision2Seq.from_pretrained(
             model_name,
             torch_dtype=dtype,
-            device_map=self._get_device_map(),
+            device_map=self._get_device_map(cfg["model"].get("device")),
             _attn_implementation="eager",
         )
         if checkpoint:

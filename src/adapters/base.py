@@ -20,11 +20,18 @@ class BaseAdapter(ABC):
     pad_token_id: int = 0
 
     @staticmethod
-    def _get_device_map():
-        """Single GPU → 'auto'; multi-GPU DDP → đặt model lên GPU của process."""
+    def _get_device_map(device: str | None = None):
+        """
+        Xác định device_map khi load model:
+          - Multi-GPU DDP (torchrun): đặt model lên GPU của process (LOCAL_RANK).
+          - Chỉ định cụ thể qua config (device: "cuda:0" / "cuda:1"): pin model lên GPU đó.
+          - Mặc định: "auto" để HuggingFace tự phân bổ.
+        """
         local_rank = os.environ.get("LOCAL_RANK")
         if local_rank is not None:
             return {"": int(local_rank)}
+        if device is not None:
+            return {"": device}
         return "auto"
 
     # ------------------------------------------------------------------ #

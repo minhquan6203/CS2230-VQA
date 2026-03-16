@@ -199,7 +199,7 @@ class MiniCPMAdapter(BaseAdapter):
         )
 
         load_kwargs = dict(
-            device_map=self._get_device_map(),
+            device_map=self._get_device_map(cfg["model"].get("device")),
             trust_remote_code=True,
             torch_dtype=torch.bfloat16,
         )
@@ -249,7 +249,7 @@ class MiniCPMAdapter(BaseAdapter):
             model_name,
             torch_dtype=dtype,
             trust_remote_code=True,
-            device_map=self._get_device_map(),
+            device_map=self._get_device_map(cfg["model"].get("device")),
         )
         if checkpoint:
             print(f"[MiniCPM] Merging LoRA từ: {checkpoint}")

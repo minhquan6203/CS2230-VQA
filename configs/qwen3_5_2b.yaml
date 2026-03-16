@@ -1,6 +1,6 @@
 model:
-  name: "openbmb/MiniCPM-Llama3-V-2_5"
-  type: "minicpm"
+  name: "Qwen/Qwen3.5-2B"
+  type: "qwen3_5"
   device: "cuda:0"  # chỉ định GPU: "cuda:0", "cuda:1", ... | null = để HF tự phân bổ
 
 data:
@@ -10,15 +10,15 @@ data:
   image_dir: "data/st_images"
 
 training:
-  output_dir: "checkpoints/minicpm_v_2_5"
+  output_dir: "checkpoints/qwen3_5_2b"
   num_train_epochs: 3
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 16
+  gradient_accumulation_steps: 16   # effective batch = 16
   learning_rate: 2.0e-4
   weight_decay: 0.01
   warmup_ratio: 0.03
-  max_length: 2048
+  max_length: 1024
   logging_steps: 50
   eval_steps: 500
   save_steps: 500
@@ -44,8 +44,8 @@ lora:
 #   bnb_4bit_use_double_quant: true
 
 evaluation:
-  checkpoint: null
+  checkpoint: null   # null = base model zero-shot; hoặc "checkpoints/qwen3_5_2b/best_model"
   batch_size: 4
   max_new_tokens: 64
   num_beams: 1
-  results_file: "results/minicpm_v_2_5_test.json"
+  results_file: "results/qwen3_5_2b_test.json"

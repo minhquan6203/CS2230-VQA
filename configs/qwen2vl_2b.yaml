@@ -1,6 +1,7 @@
 model:
   name: "Qwen/Qwen2-VL-2B-Instruct"
   type: "qwen2vl"
+  device: "cuda:0"  # chỉ định GPU: "cuda:0", "cuda:1", ... | null = để HF tự phân bổ
   min_pixels: 256   # 256 * 28 * 28 ≈ 200K pixels
   max_pixels: 512   # 512 * 28 * 28 ≈ 400K pixels → ~512 patches tối đa
 

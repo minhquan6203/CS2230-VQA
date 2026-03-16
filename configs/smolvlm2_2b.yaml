@@ -1,6 +1,7 @@
 model:
   name: "HuggingFaceTB/SmolVLM2-2.2B-Instruct"
   type: "smolvlm"   # dùng cùng adapter với SmolVLM
+  device: "cuda:0"  # chỉ định GPU: "cuda:0", "cuda:1", ... | null = để HF tự phân bổ
 
 data:
   train_file: "data/ViTextVQA_train.json"

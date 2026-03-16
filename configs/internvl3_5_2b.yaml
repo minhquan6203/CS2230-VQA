@@ -1,7 +1,8 @@
 model:
-  name: "openbmb/MiniCPM-Llama3-V-2_5"
-  type: "minicpm"
+  name: "OpenGVLab/InternVL3_5-2B"
+  type: "internvl3_5"
   device: "cuda:0"  # chỉ định GPU: "cuda:0", "cuda:1", ... | null = để HF tự phân bổ
+  max_num_tiles: 6   # mỗi tile = 256 tokens, max 7 tiles (6+thumbnail) = 1792 image tokens
 
 data:
   train_file: "data/ViTextVQA_train.json"
@@ -10,11 +11,11 @@ data:
   image_dir: "data/st_images"
 
 training:
-  output_dir: "checkpoints/minicpm_v_2_5"
+  output_dir: "checkpoints/internvl3_5_2b"
   num_train_epochs: 3
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 16
+  gradient_accumulation_steps: 16   # effective batch = 16
   learning_rate: 2.0e-4
   weight_decay: 0.01
   warmup_ratio: 0.03
@@ -34,18 +35,19 @@ lora:
   r: 16
   lora_alpha: 32
   lora_dropout: 0.05
+  # InternVL3.5 dùng Qwen3 LLM backbone → target modules theo naming convention Qwen3
   target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   bias: "none"
 
-# quantization:
-#   load_in_4bit: true
-#   bnb_4bit_quant_type: "nf4"
-#   bnb_4bit_compute_dtype: "bfloat16"
-#   bnb_4bit_use_double_quant: true
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
 
 evaluation:
-  checkpoint: null
+  checkpoint: null   # null = base model zero-shot; hoặc "checkpoints/internvl3_5_2b/best_model"
   batch_size: 4
   max_new_tokens: 64
   num_beams: 1
-  results_file: "results/minicpm_v_2_5_test.json"
+  results_file: "results/internvl3_5_2b_test.json"
