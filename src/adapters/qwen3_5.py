@@ -27,9 +27,11 @@ class Qwen3_5Adapter(BaseAdapter):
     def _build_processor(self, model_name: str, model_cfg: dict) -> AutoProcessor:
         min_pixels = model_cfg.get("min_pixels", 256) * 28 * 28
         max_pixels = model_cfg.get("max_pixels", 1280) * 28 * 28
-        return AutoProcessor.from_pretrained(
+        processor = AutoProcessor.from_pretrained(
             model_name, min_pixels=min_pixels, max_pixels=max_pixels
         )
+        processor.tokenizer.padding_side = "left"
+        return processor
 
     # ------------------------------------------------------------------ #
     #  Load                                                                #
