@@ -18,6 +18,23 @@ from transformers import AutoModel, AutoTokenizer
 
 from .internvl2 import InternVL2Adapter, _patch_meta_linspace, IMG_CONTEXT_TOKEN
 
+# --- Patch transformers compat cho InternVL3.5 trust_remote_code ---
+# InternVLChatModel thiếu `all_tied_weights_keys` mà transformers mới cần
+# trong cả `get_total_byte_count` (load thường) lẫn quantizer path.
+try:
+    import transformers.modeling_utils as _mu
+
+    _orig_get_total_byte_count = _mu.get_total_byte_count
+
+    def _patched_get_total_byte_count(model, *args, **kwargs):
+        if not hasattr(model, "all_tied_weights_keys"):
+            model.all_tied_weights_keys = {}
+        return _orig_get_total_byte_count(model, *args, **kwargs)
+
+    _mu.get_total_byte_count = _patched_get_total_byte_count
+except (ImportError, AttributeError):
+    pass
+
 
 class InternVL3_5Adapter(InternVL2Adapter):
     """InternVL3.5 — kế thừa InternVL2, override load cho Qwen3 LLM backbone."""
