@@ -7,10 +7,10 @@ model:
   max_num_tiles: 4   # mỗi tile = 256 tokens, max 5 tiles (4+thumbnail) = 1280 image tokens
 
 data:
-  train_file: "../data/ViTextVQA_train.json"
-  dev_file: "../data/ViTextVQA_dev.json"
-  test_file: "../data/ViTextVQA_test_gt.json"
-  image_dir: "../data/st_images"
+  train_file: "./data/ViTextVQA_train.json"
+  dev_file: "./data/ViTextVQA_dev.json"
+  test_file: "./data/ViTextVQA_test_gt.json"
+  image_dir: "./data/st_images"
 
 training:
   output_dir: "checkpoints/internvl2_2b"
@@ -20,7 +20,7 @@ training:
   gradient_accumulation_steps: 16   # effective batch = 16
   learning_rate: 2.0e-4
   weight_decay: 0.01
-  warmup_ratio: 0.03
+  warmup_steps: 200
   max_length: 2048
   logging_steps: 50
   eval_steps: 500

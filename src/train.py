@@ -53,7 +53,7 @@ def train(config_path: str):
         gradient_accumulation_steps=t_cfg["gradient_accumulation_steps"],
         learning_rate=t_cfg["learning_rate"],
         weight_decay=t_cfg.get("weight_decay", 0.01),
-        warmup_ratio=t_cfg.get("warmup_ratio", 0.03),
+        warmup_steps=t_cfg.get("warmup_steps", 200),
         logging_steps=t_cfg.get("logging_steps", 50),
         eval_strategy="steps",
         eval_steps=t_cfg.get("eval_steps", 500),
