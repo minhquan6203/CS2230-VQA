@@ -26,10 +26,29 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def setup_wandb(cfg: dict) -> None:
+    """Initialize wandb run using project/run_name from config."""
+    import wandb
+    wandb_cfg = cfg.get("wandb", {})
+    wandb.init(
+        project=wandb_cfg.get("project", "CS2230-VQA"),
+        name=wandb_cfg.get("run_name"),
+        config={
+            "model": cfg.get("model", {}),
+            "training": cfg.get("training", {}),
+            "lora": cfg.get("lora", {}),
+        },
+    )
+
+
 def train(config_path: str):
     cfg = load_config(config_path)
     t_cfg = cfg["training"]
     torch.manual_seed(t_cfg.get("seed", 42))
+
+    report_to = t_cfg.get("report_to", "none")
+    if report_to == "wandb":
+        setup_wandb(cfg)
 
     # Load model qua adapter
     adapter = get_adapter(cfg["model"]["type"])
@@ -45,6 +64,8 @@ def train(config_path: str):
         adapter, max_length=t_cfg["max_length"], training=True
     )
 
+    wandb_cfg = cfg.get("wandb", {})
+    wandb_run_name = wandb_cfg.get("run_name") if report_to == "wandb" else None
     training_args = TrainingArguments(
         output_dir=t_cfg["output_dir"],
         num_train_epochs=t_cfg["num_train_epochs"],
@@ -68,7 +89,8 @@ def train(config_path: str):
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         dataloader_num_workers=t_cfg.get("dataloader_num_workers", 2),
-        report_to=t_cfg.get("report_to", "none"),
+        report_to=report_to,
+        run_name=wandb_run_name,
         remove_unused_columns=False,
         seed=t_cfg.get("seed", 42),
     )
@@ -92,6 +114,10 @@ def train(config_path: str):
     elif adapter.processor is not None:
         adapter.processor.save_pretrained(best_path)
     print(f"Đã lưu checkpoint tại: {best_path}")
+
+    if report_to == "wandb":
+        import wandb
+        wandb.finish()
 
 
 if __name__ == "__main__":

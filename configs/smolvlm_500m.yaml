@@ -29,7 +29,7 @@ training:
   metric_for_best_model: "eval_loss"
   greater_is_better: false
   dataloader_num_workers: 2
-  report_to: "none"
+  report_to: "wandb"
   seed: 42
 
 lora:
@@ -39,6 +39,10 @@ lora:
   target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   bias: "none"
 
+
+wandb:
+  project: "CS2230-VQA"
+  run_name: "smolvlm_500m"
 
 evaluation:
   checkpoint: null
