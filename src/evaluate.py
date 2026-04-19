@@ -74,6 +74,32 @@ def run_inference(adapter, dataset: ViTextVQADataset, eval_cfg: dict, max_length
     return results
 
 
+def log_metrics_to_wandb(cfg: dict, metrics: dict, checkpoint: str | None) -> None:
+    """Log evaluation metrics to wandb if a wandb config section is present."""
+    wandb_cfg = cfg.get("wandb")
+    if not wandb_cfg:
+        return
+    import wandb
+    mode = "finetuned" if checkpoint else "zero-shot"
+    run_name = f"{wandb_cfg.get('run_name', 'eval')}_{mode}"
+    wandb.init(
+        project=wandb_cfg.get("project", "CS2230-VQA"),
+        name=run_name,
+        config={
+            "model": cfg.get("model", {}),
+            "evaluation": cfg.get("evaluation", {}),
+            "checkpoint": checkpoint,
+            "mode": mode,
+        },
+    )
+    wandb.log({
+        "eval/f1": metrics["f1"],
+        "eval/exact_match": metrics["exact_match"],
+        "eval/num_samples": metrics["num_samples"],
+    })
+    wandb.finish()
+
+
 def evaluate(config_path: str, checkpoint: str | None = None, results_file: str | None = None):
     cfg = load_config(config_path)
     eval_cfg = cfg["evaluation"]
@@ -122,6 +148,8 @@ def evaluate(config_path: str, checkpoint: str | None = None, results_file: str 
     with open(results_file, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"\nPredictions saved → {results_file}")
+
+    log_metrics_to_wandb(cfg, metrics, checkpoint)
 
     return metrics
 

@@ -29,7 +29,7 @@ training:
   metric_for_best_model: "eval_loss"
   greater_is_better: false
   dataloader_num_workers: 2
-  report_to: "none"
+  report_to: "wandb"
   seed: 42
 
 lora:
@@ -44,6 +44,10 @@ quantization:
   bnb_4bit_quant_type: "nf4"
   bnb_4bit_compute_dtype: "bfloat16"
   bnb_4bit_use_double_quant: true
+
+wandb:
+  project: "CS2230-VQA"
+  run_name: "smolvlm2_2b"
 
 evaluation:
   checkpoint: null
